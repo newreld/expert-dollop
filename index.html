@@ -45,6 +45,14 @@
     padding: 8px 14px; border-radius: 16px; font-weight: bold; font-size: 18px;
     box-shadow: 0 3px 0 #e0a800;
   }
+  .hudbtn {
+    pointer-events: auto; cursor: pointer; border: none; font-family: inherit;
+    background: rgba(255,255,255,0.65); border-radius: 14px; font-size: 22px;
+    width: 46px; height: 46px; box-shadow: 0 3px 0 rgba(0,0,0,0.1);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .hudbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.1); }
+  #capeBtn.hide, #muteBtn.hide { display: none; }
 
   /* ---- Hero ---- */
   #hero {
@@ -52,6 +60,16 @@
     transform: translateX(-50%);
     text-align: center; z-index: 10; transition: filter .3s;
     will-change: transform;
+    animation: bob 2.4s ease-in-out infinite;
+  }
+  @keyframes bob {
+    0%,100% { transform: translateX(-50%) translateY(0); }
+    50%     { transform: translateX(-50%) translateY(-6px); }
+  }
+  #hero.fly { animation: fly 2.2s ease-in-out infinite; }
+  @keyframes fly {
+    0%,100% { transform: translateX(-50%) translateY(0); }
+    50%     { transform: translateX(-50%) translateY(-24px); }
   }
   #heroBody { font-size: 60px; line-height: 1; transition: font-size .4s cubic-bezier(.34,1.56,.64,1); display:inline-block; }
   #heroFx { position: absolute; inset: -20px; pointer-events: none; }
@@ -124,6 +142,8 @@
 
   <div id="hud" class="hide">
     <div id="rainbow"></div>
+    <button id="capeBtn" class="hudbtn hide" title="Change cape colour">🎨</button>
+    <button id="muteBtn" class="hudbtn" title="Sound on/off">🔊</button>
     <div id="levelBadge">Lv 1</div>
   </div>
 
@@ -154,9 +174,45 @@
   const heroEl = document.getElementById("hero");
   const heroBody = document.getElementById("heroBody");
   const capeEl = document.getElementById("cape");
+  const capeBtn = document.getElementById("capeBtn");
+  const muteBtn = document.getElementById("muteBtn");
   const speechEl = document.getElementById("speech");
   const titleEl = document.getElementById("title");
   const startBtn = document.getElementById("startBtn");
+
+  // ---- Sound: tiny WebAudio synth, no asset files. Happy & gentle. ----
+  const Sound = (function () {
+    let ctx = null, muted = false;
+    function ensure() {
+      if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+      if (ctx && ctx.state === "suspended") ctx.resume();
+    }
+    function tone(freq, dur, type, vol, when) {
+      if (!ctx || muted) return;
+      const t = ctx.currentTime + (when || 0);
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type || "sine"; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol || 0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    }
+    return {
+      init: ensure,
+      toggle() { muted = !muted; return muted; },
+      crunch() { // bright happy "ding-up" for healthy food
+        tone(523, 0.12, "triangle", 0.16);
+        tone(784, 0.16, "triangle", 0.14, 0.07);
+      },
+      blop() { // soft comedic low blip for junk — playful, not negative
+        tone(180, 0.14, "sine", 0.14);
+      },
+      fanfare() { // rising arpeggio on level up
+        [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, "triangle", 0.16, i * 0.09));
+      },
+    };
+  })();
 
   // ---- The five healthy food groups = the Power Rainbow ----
   // Each group is a color/segment. Variety (all five) is what levels you up.
@@ -180,6 +236,10 @@
     { name: "Super Power!",   msg: "SUPER CAPTAIN VEGGIE! 🌟", size: 140, fx: "glow" },
   ];
 
+  // Cape colours, unlocked one at a time as the player completes more rainbows.
+  // Customization is a reward for variety — never required, never lost.
+  const CAPE_COLORS = ["🟥","🟧","🟨","🟩","🟦","🟪"];
+
   let state = null;
   let foods = [];
   let lastSpawn = 0;
@@ -194,6 +254,8 @@
       heroX: 0.5,          // 0..1 horizontal
       flying: false,
       running: true,
+      capesUnlocked: 1,    // how many cape colours are available
+      capeIndex: 0,        // which one is worn
       t0: performance.now(),
     };
   }
@@ -237,14 +299,18 @@
   function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
   function spawnFood() {
-    const isJunk = Math.random() < 0.32; // some junk drifts by — it's a choice, not a trap
+    const isJunk = Math.random() < 0.28; // some junk drifts by — it's a choice, not a trap
     const el = document.createElement("div");
     el.className = "food" + (isJunk ? " junk" : "");
     let group = null, emoji;
     if (isJunk) {
       emoji = rand(JUNK);
     } else {
-      group = rand(GROUPS);
+      // Bias toward food groups not yet collected this rainbow, so progress
+      // feels responsive and the world keeps offering the variety you need.
+      const missing = state ? GROUPS.filter(g => !state.filled[g.key]) : GROUPS;
+      const pool = (missing.length && Math.random() < 0.7) ? missing : GROUPS;
+      group = rand(pool);
       emoji = rand(group.emojis);
     }
     el.textContent = emoji;
@@ -276,17 +342,12 @@
     const cy = rect.top;
 
     if (f.isJunk) {
-      // Harmless! Tasty but gives NO power. The "badness" is that nothing happens.
+      // Harmless! Tasty but gives NO power. The "badness" is just that nothing happens.
+      // No scolding — the contrast with sparkly healthy food does the talking.
       state.junkCount++;
+      Sound.blop();
       poof(cx, cy);
-      floatText(cx, cy, "yum… but no power 🥱", "#888");
-      if (state.junkCount % 3 === 0) {
-        speak(rand([
-          "Tasty! But I don't feel any stronger…",
-          "Mmm sweet — but where's my super power?",
-          "I need my veggies to grow! 🥦",
-        ]));
-      }
+      floatText(cx, cy, rand(["yum 😋", "tasty!", "mmm 🍬"]), "#999");
       removeFood(f);
       return;
     }
@@ -297,6 +358,7 @@
     const isNew = !state.filled[key];
     state.filled[key] = true;
     refreshRainbow();
+    Sound.crunch();
     sparkle(cx, cy, f.group.color);
 
     if (isNew) {
@@ -323,6 +385,7 @@
   }
 
   function levelUp() {
+    const isNewPower = state.level - 1 < POWERS.length;
     const powerIdx = Math.min(state.level - 1, POWERS.length - 1);
     const power = POWERS[powerIdx];
 
@@ -330,10 +393,10 @@
     state.filled = {};
     refreshRainbow();
     levelBadge.textContent = "Lv " + state.level;
+    Sound.fanfare();
 
     // Apply visible upgrade — strictly an improvement. Never a downgrade.
     heroBody.style.fontSize = power.size + "px";
-    speak("🌈 RAINBOW POWER! " + power.msg, 2600);
     levelBadge.animate(
       [{ transform: "scale(1)" }, { transform: "scale(1.4)" }, { transform: "scale(1)" }],
       { duration: 500 }
@@ -342,12 +405,44 @@
     if (power.fx === "fly") {
       capeEl.style.opacity = "1";
       state.flying = true;
+      heroEl.classList.add("fly");
+      capeBtn.classList.remove("hide"); // cape customization becomes available
     }
     if (power.fx === "speed") heroEl.classList.add("speedlines");
     if (power.fx === "glow") heroEl.classList.add("glow");
 
+    // Variety keeps paying off: unlock a new cape colour each rainbow.
+    if (state.capesUnlocked < CAPE_COLORS.length) state.capesUnlocked++;
+
+    if (isNewPower) {
+      speak("🌈 RAINBOW POWER! " + power.msg, 2600);
+    } else {
+      // Past the last power: keep celebrating variety, no cap, no fail state.
+      speak("🌈 Another rainbow! New cape colour unlocked! 🎨", 2600);
+    }
+
     burst();
   }
+
+  function applyCape() {
+    capeEl.textContent = CAPE_COLORS[state.capeIndex];
+  }
+
+  capeBtn.addEventListener("click", () => {
+    if (!state) return;
+    state.capeIndex = (state.capeIndex + 1) % state.capesUnlocked;
+    applyCape();
+    Sound.crunch();
+    capeEl.animate(
+      [{ transform: "translateX(-50%) scale(1)" }, { transform: "translateX(-50%) scale(1.3)" }, { transform: "translateX(-50%) scale(1)" }],
+      { duration: 300 }
+    );
+  });
+
+  muteBtn.addEventListener("click", () => {
+    const muted = Sound.toggle();
+    muteBtn.textContent = muted ? "🔇" : "🔊";
+  });
 
   // ---- visual effects ----
   function sparkle(x, y, color) {
@@ -425,11 +520,14 @@
   });
 
   function start() {
+    Sound.init(); // audio must start from a user gesture
     state = newState();
     foods.forEach(f => f.el.remove()); foods = [];
     buildRainbow(); refreshRainbow();
     heroBody.style.fontSize = "60px";
     heroEl.className = ""; capeEl.style.opacity = "0";
+    capeBtn.classList.add("hide");
+    applyCape();
     levelBadge.textContent = "Lv 1";
     titleEl.classList.add("hide");
     hud.classList.remove("hide");
