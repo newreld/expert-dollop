@@ -10,7 +10,9 @@
     --sky-bottom: #d6f3ff;
     --ground: #7ed957;
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* touch-action: manipulation kills the double-tap-to-zoom delay/zoom on every
+     tappable element, so rapid tapping of foods never zooms the page. */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   html, body {
     margin: 0; height: 100%; overflow: hidden;
     font-family: "Comic Sans MS", "Baloo", "Trebuchet MS", system-ui, sans-serif;
@@ -166,6 +168,14 @@
 <script>
 (function () {
   "use strict";
+
+  // Belt-and-braces: stop iOS Safari pinch/double-tap zoom that can fire while
+  // a child taps foods rapidly (touch-action handles most of it; these cover the rest).
+  document.addEventListener("gesturestart", (e) => e.preventDefault());
+  document.addEventListener("dblclick", (e) => e.preventDefault());
+  document.addEventListener("touchstart", (e) => {
+    if (e.touches.length > 1) e.preventDefault(); // block pinch-zoom
+  }, { passive: false });
 
   const game = document.getElementById("game");
   const hud = document.getElementById("hud");
