@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Captain Veggie — Eat & Grow!</title>
+<style>
+  :root {
+    --sky-top: #8fd3ff;
+    --sky-bottom: #d6f3ff;
+    --ground: #7ed957;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    font-family: "Comic Sans MS", "Baloo", "Trebuchet MS", system-ui, sans-serif;
+    user-select: none;
+  }
+  #game {
+    position: relative; width: 100vw; height: 100vh;
+    background: linear-gradient(to bottom, var(--sky-top), var(--sky-bottom) 70%, var(--ground) 70%, #5cb83f 100%);
+    overflow: hidden; touch-action: manipulation;
+  }
+
+  /* ---- Top HUD ---- */
+  #hud {
+    position: absolute; top: 0; left: 0; right: 0; padding: 10px 14px;
+    display: flex; align-items: center; gap: 12px; z-index: 20;
+    pointer-events: none;
+  }
+  #rainbow {
+    display: flex; gap: 6px; padding: 8px 10px; border-radius: 18px;
+    background: rgba(255,255,255,0.55); box-shadow: 0 3px 0 rgba(0,0,0,0.08);
+  }
+  .seg {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.9);
+    background: #d9d9d9; opacity: 0.45;
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+    transition: opacity .25s, transform .25s, box-shadow .25s;
+  }
+  .seg.lit { opacity: 1; transform: scale(1.12); box-shadow: 0 0 14px 3px rgba(255,255,255,0.9); }
+  #levelBadge {
+    margin-left: auto; background: #ffd43b; color: #6b4e00;
+    padding: 8px 14px; border-radius: 16px; font-weight: bold; font-size: 18px;
+    box-shadow: 0 3px 0 #e0a800;
+  }
+
+  /* ---- Hero ---- */
+  #hero {
+    position: absolute; left: 50%; bottom: 22%;
+    transform: translateX(-50%);
+    text-align: center; z-index: 10; transition: filter .3s;
+    will-change: transform;
+  }
+  #heroBody { font-size: 60px; line-height: 1; transition: font-size .4s cubic-bezier(.34,1.56,.64,1); display:inline-block; }
+  #heroFx { position: absolute; inset: -20px; pointer-events: none; }
+  #cape {
+    position: absolute; top: 18%; left: 50%; transform: translateX(-50%);
+    font-size: 40px; opacity: 0; transition: opacity .4s; z-index: -1;
+  }
+  .speedlines #heroBody { animation: jiggle .35s infinite; }
+  @keyframes jiggle { 0%,100%{transform:translateX(-2px)} 50%{transform:translateX(2px)} }
+  .glow { filter: drop-shadow(0 0 16px gold) drop-shadow(0 0 30px #fff176); }
+
+  /* ---- Foods ---- */
+  .food {
+    position: absolute; font-size: 40px; z-index: 8; cursor: pointer;
+    will-change: transform; filter: drop-shadow(0 2px 2px rgba(0,0,0,.2));
+  }
+  .food.junk { opacity: 0.92; }
+
+  /* ---- Floating text ---- */
+  .floatText {
+    position: absolute; z-index: 30; font-weight: bold; pointer-events: none;
+    text-shadow: 0 2px 0 rgba(255,255,255,.8); white-space: nowrap;
+    animation: floatUp 1.1s ease-out forwards; font-size: 22px;
+  }
+  @keyframes floatUp {
+    0% { transform: translateY(0) scale(.6); opacity: 0; }
+    20% { transform: translateY(-10px) scale(1.1); opacity: 1; }
+    100% { transform: translateY(-70px) scale(1); opacity: 0; }
+  }
+
+  /* ---- Hero speech ---- */
+  #speech {
+    position: absolute; left: 50%; bottom: 40%; transform: translateX(-50%);
+    background: #fff; border: 3px solid #2c3e50; border-radius: 16px;
+    padding: 8px 14px; font-size: 17px; color: #2c3e50; z-index: 15;
+    max-width: 70vw; text-align: center; opacity: 0; transition: opacity .3s;
+    box-shadow: 0 4px 0 rgba(0,0,0,.12);
+  }
+  #speech.show { opacity: 1; }
+  #speech:after {
+    content:""; position:absolute; bottom:-12px; left:50%; transform:translateX(-50%);
+    border:8px solid transparent; border-top-color:#2c3e50;
+  }
+
+  /* ---- Start / Title ---- */
+  #title {
+    position: absolute; inset: 0; z-index: 50; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: linear-gradient(to bottom, #8fd3ff, #d6f3ff);
+  }
+  #title h1 { font-size: 11vw; color: #2c8a00; margin: 0; text-shadow: 0 4px 0 #fff, 0 6px 0 rgba(0,0,0,.15); }
+  #title p { font-size: 4.5vw; color: #2c3e50; max-width: 80%; margin: 14px 0; }
+  .bigbtn {
+    pointer-events: auto; margin-top: 18px; font-size: 6vw; font-family: inherit;
+    padding: 16px 40px; border: none; border-radius: 24px; cursor: pointer;
+    background: #ffd43b; color: #6b4e00; font-weight: bold; box-shadow: 0 6px 0 #e0a800;
+  }
+  .bigbtn:active { transform: translateY(4px); box-shadow: 0 2px 0 #e0a800; }
+  .hide { display: none !important; }
+
+  /* sun + clouds for charm */
+  #sun { position:absolute; top:14%; right:10%; font-size:50px; z-index:1; animation: spin 18s linear infinite;}
+  @keyframes spin { to { transform: rotate(360deg);} }
+  .cloud { position:absolute; font-size:46px; z-index:1; opacity:.85; }
+</style>
+</head>
+<body>
+<div id="game">
+  <div id="sun">☀️</div>
+
+  <div id="hud" class="hide">
+    <div id="rainbow"></div>
+    <div id="levelBadge">Lv 1</div>
+  </div>
+
+  <div id="speech"></div>
+
+  <div id="hero" class="hide">
+    <div id="heroFx"></div>
+    <span id="cape">🟥</span>
+    <span id="heroBody">🦸</span>
+  </div>
+
+  <div id="title">
+    <h1>Captain&nbsp;Veggie</h1>
+    <p>Eat your veggies, fruits and grains to grow big, strong, fast — and learn to fly!
+       The secret power is <b>variety</b>: eat the whole rainbow! 🌈</p>
+    <button class="bigbtn" id="startBtn">▶ Play!</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const game = document.getElementById("game");
+  const hud = document.getElementById("hud");
+  const rainbowEl = document.getElementById("rainbow");
+  const levelBadge = document.getElementById("levelBadge");
+  const heroEl = document.getElementById("hero");
+  const heroBody = document.getElementById("heroBody");
+  const capeEl = document.getElementById("cape");
+  const speechEl = document.getElementById("speech");
+  const titleEl = document.getElementById("title");
+  const startBtn = document.getElementById("startBtn");
+
+  // ---- The five healthy food groups = the Power Rainbow ----
+  // Each group is a color/segment. Variety (all five) is what levels you up.
+  const GROUPS = [
+    { key: "veg",     color: "#5cb83f", emojis: ["🥦","🥬","🥕","🌽","🍆","🫑"] },
+    { key: "fruit",   color: "#ff6b6b", emojis: ["🍎","🍓","🍌","🍇","🍊","🍉"] },
+    { key: "grain",   color: "#e0a800", emojis: ["🍚","🍞","🌾","🥣","🍝"] },
+    { key: "protein", color: "#9b59b6", emojis: ["🫘","🥚","🐟","🥜","🧆"] },
+    { key: "water",   color: "#4dabf7", emojis: ["💧","🥛","🫗"] },
+  ];
+
+  // Junk food: harmless, tasty, but gives NO power. Never hurts you.
+  const JUNK = ["🍭","🍫","🍰","🥤","🍩","🍪","🍬","🧁"];
+
+  // Powers unlocked each time you complete a rainbow (level up). Only ever UP.
+  const POWERS = [
+    { name: "Grow Power",     msg: "I'm getting BIGGER! 💪", size: 78 },
+    { name: "Strong Power",   msg: "So strong now! 💪💪",     size: 96,  fx: "strong" },
+    { name: "Speed Power",    msg: "Zoooom! Super speedy! ⚡", size: 110, fx: "speed" },
+    { name: "Flight Power",   msg: "Look — I can FLY! 🦸",    size: 124, fx: "fly" },
+    { name: "Super Power!",   msg: "SUPER CAPTAIN VEGGIE! 🌟", size: 140, fx: "glow" },
+  ];
+
+  let state = null;
+  let foods = [];
+  let lastSpawn = 0;
+  let rafId = null;
+
+  function newState() {
+    return {
+      level: 1,
+      filled: {},          // which groups are lit this rainbow
+      eatenCount: 0,
+      junkCount: 0,
+      heroX: 0.5,          // 0..1 horizontal
+      flying: false,
+      running: true,
+      t0: performance.now(),
+    };
+  }
+
+  function buildRainbow() {
+    rainbowEl.innerHTML = "";
+    GROUPS.forEach(g => {
+      const d = document.createElement("div");
+      d.className = "seg";
+      d.dataset.key = g.key;
+      d.style.background = g.color;
+      rainbowEl.appendChild(d);
+    });
+  }
+
+  function refreshRainbow() {
+    [...rainbowEl.children].forEach(seg => {
+      seg.classList.toggle("lit", !!state.filled[seg.dataset.key]);
+    });
+  }
+
+  function speak(text, ms = 1800) {
+    speechEl.textContent = text;
+    speechEl.classList.add("show");
+    clearTimeout(speak._t);
+    speak._t = setTimeout(() => speechEl.classList.remove("show"), ms);
+  }
+
+  function floatText(x, y, text, color) {
+    const el = document.createElement("div");
+    el.className = "floatText";
+    el.textContent = text;
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+    el.style.color = color;
+    el.style.transform = "translateX(-50%)";
+    game.appendChild(el);
+    setTimeout(() => el.remove(), 1100);
+  }
+
+  function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  function spawnFood() {
+    const isJunk = Math.random() < 0.32; // some junk drifts by — it's a choice, not a trap
+    const el = document.createElement("div");
+    el.className = "food" + (isJunk ? " junk" : "");
+    let group = null, emoji;
+    if (isJunk) {
+      emoji = rand(JUNK);
+    } else {
+      group = rand(GROUPS);
+      emoji = rand(group.emojis);
+    }
+    el.textContent = emoji;
+
+    const w = game.clientWidth, h = game.clientHeight;
+    const x = 40 + Math.random() * (w - 80);
+    const f = {
+      el, isJunk, group,
+      x, y: -50,
+      vy: 60 + Math.random() * 50,   // px per second, gentle for kids
+      drift: (Math.random() - 0.5) * 40,
+    };
+    el.style.left = x + "px";
+    el.style.top = f.y + "px";
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); eat(f); });
+    game.appendChild(el);
+    foods.push(f);
+  }
+
+  function removeFood(f) {
+    f.el.remove();
+    foods = foods.filter(o => o !== f);
+  }
+
+  function eat(f) {
+    if (!state.running) return;
+    const rect = f.el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top;
+
+    if (f.isJunk) {
+      // Harmless! Tasty but gives NO power. The "badness" is that nothing happens.
+      state.junkCount++;
+      poof(cx, cy);
+      floatText(cx, cy, "yum… but no power 🥱", "#888");
+      if (state.junkCount % 3 === 0) {
+        speak(rand([
+          "Tasty! But I don't feel any stronger…",
+          "Mmm sweet — but where's my super power?",
+          "I need my veggies to grow! 🥦",
+        ]));
+      }
+      removeFood(f);
+      return;
+    }
+
+    // Healthy food!
+    state.eatenCount++;
+    const key = f.group.key;
+    const isNew = !state.filled[key];
+    state.filled[key] = true;
+    refreshRainbow();
+    sparkle(cx, cy, f.group.color);
+
+    if (isNew) {
+      floatText(cx, cy, "+1 Rainbow! 🌈", f.group.color);
+    } else {
+      floatText(cx, cy, "Yum! 😋", f.group.color);
+      // gentle nudge toward variety
+      const missing = GROUPS.filter(g => !state.filled[g.key]);
+      if (missing.length && Math.random() < 0.5) {
+        speak("Yum! Now let's try a different color! 🌈");
+      }
+    }
+    // little happy hop
+    heroBody.animate(
+      [{ transform: "translateY(0)" }, { transform: "translateY(-14px)" }, { transform: "translateY(0)" }],
+      { duration: 300, easing: "ease-out" }
+    );
+    removeFood(f);
+
+    // Completed the rainbow? Level up!
+    if (GROUPS.every(g => state.filled[g.key])) {
+      levelUp();
+    }
+  }
+
+  function levelUp() {
+    const powerIdx = Math.min(state.level - 1, POWERS.length - 1);
+    const power = POWERS[powerIdx];
+
+    state.level++;
+    state.filled = {};
+    refreshRainbow();
+    levelBadge.textContent = "Lv " + state.level;
+
+    // Apply visible upgrade — strictly an improvement. Never a downgrade.
+    heroBody.style.fontSize = power.size + "px";
+    speak("🌈 RAINBOW POWER! " + power.msg, 2600);
+    levelBadge.animate(
+      [{ transform: "scale(1)" }, { transform: "scale(1.4)" }, { transform: "scale(1)" }],
+      { duration: 500 }
+    );
+
+    if (power.fx === "fly") {
+      capeEl.style.opacity = "1";
+      state.flying = true;
+    }
+    if (power.fx === "speed") heroEl.classList.add("speedlines");
+    if (power.fx === "glow") heroEl.classList.add("glow");
+
+    burst();
+  }
+
+  // ---- visual effects ----
+  function sparkle(x, y, color) {
+    for (let i = 0; i < 8; i++) {
+      const s = document.createElement("div");
+      s.textContent = "✨";
+      s.style.position = "absolute";
+      s.style.left = x + "px";
+      s.style.top = y + "px";
+      s.style.zIndex = 25;
+      s.style.pointerEvents = "none";
+      s.style.fontSize = (12 + Math.random() * 12) + "px";
+      game.appendChild(s);
+      const ang = Math.random() * Math.PI * 2, dist = 30 + Math.random() * 40;
+      s.animate(
+        [{ transform: "translate(0,0)", opacity: 1 },
+         { transform: `translate(${Math.cos(ang)*dist}px, ${Math.sin(ang)*dist}px)`, opacity: 0 }],
+        { duration: 600, easing: "ease-out" }
+      );
+      setTimeout(() => s.remove(), 600);
+    }
+  }
+  function poof(x, y) {
+    const s = document.createElement("div");
+    s.textContent = "💨";
+    s.style.position = "absolute"; s.style.left = x + "px"; s.style.top = y + "px";
+    s.style.zIndex = 25; s.style.pointerEvents = "none"; s.style.fontSize = "28px";
+    game.appendChild(s);
+    s.animate([{ opacity: 1, transform: "scale(.6)" }, { opacity: 0, transform: "scale(1.4)" }],
+      { duration: 500 });
+    setTimeout(() => s.remove(), 500);
+  }
+  function burst() {
+    const w = game.clientWidth;
+    for (let i = 0; i < 24; i++) {
+      const s = document.createElement("div");
+      s.textContent = rand(["🌈","⭐","✨","💪","⚡","🌟"]);
+      s.style.position = "absolute"; s.style.left = (w/2) + "px"; s.style.top = "50%";
+      s.style.zIndex = 40; s.style.pointerEvents = "none"; s.style.fontSize = "26px";
+      game.appendChild(s);
+      const ang = Math.random()*Math.PI*2, dist = 80 + Math.random()*160;
+      s.animate([{ transform:"translate(-50%,-50%) scale(.5)", opacity:1 },
+                 { transform:`translate(calc(-50% + ${Math.cos(ang)*dist}px), calc(-50% + ${Math.sin(ang)*dist}px)) scale(1.2)`, opacity:0 }],
+        { duration: 900, easing:"ease-out" });
+      setTimeout(() => s.remove(), 900);
+    }
+  }
+
+  // ---- main loop ----
+  function loop(now) {
+    if (!state || !state.running) return;
+    const w = game.clientWidth, h = game.clientHeight;
+
+    if (now - lastSpawn > 850) { spawnFood(); lastSpawn = now; }
+
+    for (const f of [...foods]) {
+      f.y += f.vy / 60;
+      f.x += f.drift / 60;
+      if (f.x < 10) f.drift = Math.abs(f.drift);
+      if (f.x > w - 10) f.drift = -Math.abs(f.drift);
+      f.el.style.top = f.y + "px";
+      f.el.style.left = f.x + "px";
+      if (f.y > h + 60) removeFood(f); // missed food just floats away — no penalty
+    }
+
+    rafId = requestAnimationFrame(loop);
+  }
+
+  // hero follows finger/mouse so kids can "carry" the hero too (optional)
+  game.addEventListener("pointermove", (e) => {
+    if (!state || !state.running) return;
+    const w = game.clientWidth;
+    state.heroX = Math.max(0.08, Math.min(0.92, e.clientX / w));
+    heroEl.style.left = (state.heroX * 100) + "%";
+  });
+
+  function start() {
+    state = newState();
+    foods.forEach(f => f.el.remove()); foods = [];
+    buildRainbow(); refreshRainbow();
+    heroBody.style.fontSize = "60px";
+    heroEl.className = ""; capeEl.style.opacity = "0";
+    levelBadge.textContent = "Lv 1";
+    titleEl.classList.add("hide");
+    hud.classList.remove("hide");
+    heroEl.classList.remove("hide");
+    speak("Feed me the rainbow! 🌈", 2500);
+    lastSpawn = performance.now();
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  startBtn.addEventListener("click", start);
+
+  // a couple of decorative clouds
+  ["20%","60%"].forEach((top,i)=>{
+    const c=document.createElement("div");
+    c.className="cloud"; c.textContent="☁️"; c.style.top=top; c.style.left=(i?"70%":"15%");
+    game.appendChild(c);
+  });
+})();
+</script>
+</body>
+</html>
